@@ -1,0 +1,523 @@
+---
+title: "IC10-2-2: Data Analysis Table and Research Questions with Case 31"
+subtitle: "Case 31 Employees Federal Credit Union"
+author: "Ron Stephen Sabilla"
+date: today
+format:
+  html:
+    output-file: index.html
+    toc: true
+    toc-depth: 3
+    toc-expand: 1
+    number-sections: true
+    code-fold: show
+    code-tools: true
+    embed-resources: true
+    theme: cosmo
+execute:
+  warning: false
+  message: false
+---
+
+## Overview {.unnumbered}
+
+In IC10-2-1, I cleaned the Case 31 (Employees Federal Credit Union, EFCU) survey data. I fixed the labels, recoded "No Opinion" and "No answer" responses to missing, reverse-coded items so higher numbers mean more favorable, and built an employee proficiency index from q3 to q6.
+
+In this assignment, I use that cleaned file to turn EFCU's information needs into specific **research questions (RQs)** and **hypotheses**. I then build a **data analysis table** that matches each RQ to its variables, measurement levels, and the right statistical technique. Finally, I run each analysis and summarize what the results mean for EFCU management.
+
+::: {.callout-note title="How the analysis is organized"}
+1.  **Research questions:** what EFCU needs to know, written as RQs and testable hypotheses.
+2.  **Data analysis table:** each RQ matched to its variables, measurement levels, and technique.
+3.  **Analysis:** each RQ answered with R output and a plain-language interpretation.
+4.  **Summary of findings:** results and recommendations in one table.
+:::
+
+## Setup {.unnumbered}
+
+```{r}
+#| label: setup
+
+library(tidyverse)
+library(haven)
+library(labelled)
+library(psych)
+library(broom)
+library(effectsize)
+library(knitr)
+
+theme_set(theme_minimal(base_size = 12))
+```
+
+```{r}
+#| label: import
+
+data <- read_sav("Case 31 Data_efcu_1_RSS_cleaned.sav")
+
+dim(data)
+```
+
+The cleaned file has **128 respondents** and **51 variables**, including the reverse-coded items (`q7r`, `q8r`, `q10r`, `q37r`, `q13r` to `q26r`) and the `employee_proficiency_index` created in IC10-2-1.
+
+For the analyses below, I create a numeric copy and turn the grouping variables into labeled factors so R treats them as categories.
+
+```{r}
+#| label: prep
+
+df <- data |>
+  zap_labels() |>
+  mutate(
+    loan_status = factor(q27, levels = c(1, 2), labels = c("Has a loan", "No loan")),
+    hq_area = factor(q38, levels = c(1, 2), labels = c("Lives in HQ area", "Outside HQ area")),
+    statement_freq_ok = factor(
+      if_else(q9 == 3, "About right", "Not about right"),
+      levels = c("About right", "Not about right")
+    )
+  )
+```
+
+## Research Questions and Hypotheses
+
+Case 31 describes a credit union that wants to understand how its members see its employees, its operations, its account statements, and its products. It also wants to know whether these views differ across groups of members. Based on the questionnaire and the variables prepared in IC10-2-1, I developed seven research questions.
+
+::: {.callout-tip title="Research Questions"}
+**RQ1.** How do members rate EFCU's employees, operations, account statements, and overall management?
+
+**RQ2.** How aware are members of EFCU's products and services, and which ones have they used?
+
+**RQ3.** Is members' perception of employee proficiency related to their overall rating of how EFCU is managed?
+
+-   *H3:* Employee proficiency is positively correlated with the overall rating.
+
+**RQ4.** Which service factors best predict members' overall rating of EFCU's management?
+
+-   *H4:* Employee proficiency, processing speed (q32), and meeting members' needs (q33) each have a significant positive effect on the overall rating.
+
+**RQ5.** Do members with a loan and members without a loan differ in their perception that EFCU's loan rates are lower than other institutions?
+
+-   *H5:* Borrowers and non-borrowers differ in agreement that EFCU's loan rates are lower.
+
+**RQ6.** Do members who live in the headquarters area differ from other members in their ratings of employee proficiency and overall management?
+
+-   *H6a:* Members in the HQ area rate employee proficiency differently from members outside it.
+-   *H6b:* Members in the HQ area rate overall management differently from members outside it.
+
+**RQ7.** Is living in the headquarters area associated with having a loan or with satisfaction with statement frequency?
+
+-   *H7a:* Location is associated with loan status.
+-   *H7b:* Location is associated with whether members feel statement frequency is about right.
+:::
+
+RQ1 and RQ2 are descriptive questions, so they don't have hypotheses. RQ3 to RQ7 are tested at the **0.05 significance level**.
+
+## Data Analysis Table
+
+@tbl-analysis-plan connects each research question to the variables and the statistical technique used to answer it. The technique depends on the **measurement level** of the variables, which I identified in IC10-2-1.
+
+| RQ | Variable(s) | Role | Measurement Level | Technique | R Function |
+|---|---|---|---|---|---|
+| RQ1 | `employee_proficiency_index`, q30 to q34, `q10r`, `q37r` | Descriptive | Approx. interval | Means, SDs, % favorable | `describe()` |
+| RQ2 | `q13r` to `q26r` (14 products) | Descriptive | Ordinal | Frequency distribution (%) | `count()` |
+| RQ3 | `employee_proficiency_index` and `q37r` | Two continuous variables | Approx. interval | Pearson correlation | `cor.test()` |
+| RQ4 | DV: `q37r`; IVs: `employee_proficiency_index`, q30 to q34, `q7r`, `q10r` | Outcome and predictors | Approx. interval | Multiple linear regression | `lm()` |
+| RQ5 | DV: q30; IV: `loan_status` (q27) | Outcome by group | Interval DV, nominal IV (2 groups) | Independent-samples t-test (Welch) | `t.test()` |
+| RQ6 | DVs: `employee_proficiency_index`, `q37r`; IV: `hq_area` (q38) | Outcome by group | Interval DV, nominal IV (2 groups) | Independent-samples t-test (Welch) | `t.test()` |
+| RQ7 | `hq_area` (q38) with `loan_status` (q27) and `statement_freq_ok` (q9) | Association | Nominal × nominal | Chi-square test of independence | `chisq.test()` |
+
+: Data analysis table linking research questions to variables and techniques {#tbl-analysis-plan}
+
+::: {.callout-note title="Why these techniques fit"}
+-   **Descriptive statistics (RQ1, RQ2):** these questions ask "how much" or "how many," not whether groups differ, so means and percentages answer them directly. The awareness items are ordinal categories, so I report percentages instead of means.
+-   **Correlation (RQ3):** both variables are approximately interval, and the question asks whether they move together.
+-   **Multiple regression (RQ4):** the question asks which of several factors predicts one outcome while holding the others constant. I left out `q8r` because it is missing 16% of its answers and its direction is ambiguous (a higher loan rate is less favorable).
+-   **t-tests (RQ5, RQ6):** each compares the mean of an interval variable between two groups. I use Welch's version because it doesn't assume equal variances, and I add a Wilcoxon test as a robustness check, since Likert items are not truly continuous.
+-   **Chi-square (RQ7):** both variables are categories, so the question is whether they are associated, not whether a mean differs.
+:::
+
+## Analysis
+
+### RQ1: How members rate EFCU
+
+```{r}
+#| label: rq1-descriptives
+
+rq1_vars <- c(
+  "employee_proficiency_index" = "Employee proficiency index (q3-q6)",
+  "q30" = "Loan rates lower than others (q30)",
+  "q31" = "Keeps information confidential (q31)",
+  "q32" = "Prompt loan processing (q32)",
+  "q33" = "Services meet members' needs (q33)",
+  "q34" = "Loan applications simple (q34)",
+  "q10r" = "Statement accuracy (q10r, 1-4)",
+  "q37r" = "Overall management rating (q37r)"
+)
+
+rq1_table <- df |>
+  select(all_of(names(rq1_vars))) |>
+  describe() |>
+  as_tibble(rownames = "variable") |>
+  mutate(
+    measure = rq1_vars[variable],
+    pct_favorable = map_dbl(variable, \(v) {
+      x <- df[[v]]
+      cutoff <- if (v == "q10r") 3 else 4
+      round(mean(x >= cutoff, na.rm = TRUE) * 100, 1)
+    })
+  ) |>
+  select(measure, n, mean, sd, median, min, max, pct_favorable) |>
+  arrange(desc(mean))
+
+rq1_table |>
+  kable(
+    digits = 2,
+    col.names = c("Measure", "n", "Mean", "SD", "Median", "Min", "Max", "% Favorable"),
+    caption = "Member ratings of EFCU (1-5 scale unless noted; % favorable = 4 or 5, or 3-4 for statement accuracy)"
+  )
+```
+
+```{r}
+#| label: fig-rq1
+#| fig-cap: "Mean member ratings of EFCU on 1-5 measures"
+#| fig-height: 4.5
+
+rq1_table |>
+  filter(!str_detect(measure, "1-4")) |>
+  ggplot(aes(x = mean, y = fct_reorder(measure, mean))) +
+  geom_col(fill = "#2C6E91", width = 0.65) +
+  geom_text(aes(label = sprintf("%.2f", mean)), hjust = -0.2, size = 3.5) +
+  geom_vline(xintercept = 3, linetype = "dashed", color = "gray50") +
+  scale_x_continuous(limits = c(0, 5.3), breaks = 1:5) +
+  labs(x = "Mean rating (3 = neutral midpoint)", y = NULL)
+```
+
+::: {.callout-tip title="RQ1 interpretation"}
+Members rate EFCU's **employees** the highest. The employee proficiency index averages `r round(mean(df$employee_proficiency_index, na.rm = TRUE), 2)` out of 5, and `r round(mean(df$employee_proficiency_index >= 4) * 100, 1)`% of members average 4 or higher. **Overall management** (`q37r`) is also strong, at `r round(mean(df$q37r, na.rm = TRUE), 2)`, with `r round(mean(df$q37r >= 4, na.rm = TRUE) * 100, 1)`% rating it good or excellent. Statement accuracy is rated well too, though it uses a 1-4 scale, so its mean isn't directly comparable.
+
+The weakest area is **loan rate competitiveness** (q30). Its mean of `r round(mean(df$q30, na.rm = TRUE), 2)` sits right at the neutral midpoint, and only `r round(mean(df$q30 >= 4, na.rm = TRUE) * 100, 1)`% of members agree that EFCU's loan rates are lower than other institutions. The other loan-related items, **simple applications** (q34) and **prompt processing** (q32), along with **meeting members' needs** (q33), fall in the middle. Only about 58-60% of members agree with each, and few strongly agree.
+
+For EFCU, this means its people are its biggest strength, while pricing perception and operational responsiveness have the most room to improve.
+:::
+
+### RQ2: Product awareness and use
+
+```{r}
+#| label: rq2-awareness
+
+product_labels <- c(
+  q13r = "Regular share account", q14r = "Special subaccounts",
+  q15r = "Christmas club account", q16r = "IRA",
+  q17r = "Master credit card", q18r = "Signature loans",
+  q19r = "New car loans", q20r = "Late model car loans",
+  q21r = "Older model car loans", q22r = "Household goods loans",
+  q23r = "Recreational loans", q24r = "Share collateralized loan",
+  q25r = "IRA loans", q26r = "Line of credit loans"
+)
+
+awareness <- df |>
+  select(all_of(names(product_labels))) |>
+  pivot_longer(everything(), names_to = "item", values_to = "code") |>
+  mutate(
+    product = product_labels[item],
+    status = factor(
+      code,
+      levels = c(3, 2, 1),
+      labels = c("Aware and have used", "Aware but not used", "Unaware")
+    )
+  ) |>
+  count(product, status) |>
+  group_by(product) |>
+  mutate(pct = round(n / sum(n) * 100, 1)) |>
+  ungroup()
+
+awareness_wide <- awareness |>
+  select(product, status, pct) |>
+  pivot_wider(names_from = status, values_from = pct, values_fill = 0) |>
+  mutate(`Total aware` = `Aware and have used` + `Aware but not used`) |>
+  arrange(desc(`Aware and have used`))
+
+awareness_wide |>
+  kable(caption = "Product awareness and use (% of members)")
+```
+
+```{r}
+#| label: fig-rq2
+#| fig-cap: "Awareness and use of EFCU products"
+#| fig-height: 6
+
+awareness |>
+  mutate(product = factor(product, levels = rev(awareness_wide$product))) |>
+  ggplot(aes(x = pct, y = product, fill = status)) +
+  geom_col(width = 0.7) +
+  scale_fill_manual(values = c("#2C6E91", "#8FB9D1", "#D9D9D9")) +
+  labs(x = "% of members", y = NULL, fill = NULL) +
+  theme(legend.position = "top")
+```
+
+::: {.callout-tip title="RQ2 interpretation"}
+Use of EFCU products is concentrated in a few areas. The **Master credit card** is the most used product (`r awareness_wide |> filter(product == "Master credit card") |> pull("Aware and have used")`% have used it), followed by **line of credit loans** (`r awareness_wide |> filter(product == "Line of credit loans") |> pull("Aware and have used")`%) and **IRAs** (`r awareness_wide |> filter(product == "IRA") |> pull("Aware and have used")`%). Every other product has been used by fewer than 1 in 5 members.
+
+The bigger story is the gap between awareness and use for loans. More than 90% of members know about **new car loans** and **signature loans**, but fewer than 20% have used them. Members know these products exist but aren't choosing them, which ties back to RQ1, where loan rates were rated the weakest. Awareness is lowest for **IRA loans**, **share collateralized loans**, and **recreational loans**, where 40% or more of members are unaware.
+
+One result stands out as a possible data issue. `r awareness_wide |> filter(product == "Regular share account") |> pull(Unaware)`% of members are coded as **unaware** of the regular share account, even though a share account is normally required to be a credit union member. This may reflect a coding problem in the original file and should be checked against the paper questionnaires before EFCU acts on it.
+
+**Implication:** EFCU's challenge with most loan products is converting awareness into use, not building awareness. Promotion should focus on why members should choose EFCU (rates, ease, speed) rather than simply announcing the products.
+:::
+
+### RQ3: Employee proficiency and overall rating
+
+```{r}
+#| label: rq3-correlation
+
+rq3 <- cor.test(df$employee_proficiency_index, df$q37r, method = "pearson")
+rq3
+```
+
+```{r}
+#| label: fig-rq3
+#| fig-cap: "Employee proficiency index vs. overall management rating"
+#| fig-height: 4
+
+df |>
+  ggplot(aes(x = employee_proficiency_index, y = q37r)) +
+  geom_jitter(width = 0.05, height = 0.15, alpha = 0.6, color = "#2C6E91") +
+  geom_smooth(method = "lm", se = TRUE, color = "#C0392B") +
+  labs(x = "Employee proficiency index (1-5)", y = "Overall management rating (1-5)")
+```
+
+::: {.callout-tip title="RQ3 interpretation"}
+**H3 is supported.** Employee proficiency has a moderate-to-strong positive correlation with the overall rating (*r* = `r round(rq3$estimate, 2)`, *p* `r if (rq3$p.value < .001) "< .001" else paste("=", round(rq3$p.value, 3))`, *n* = `r rq3$parameter + 2`). Members who rate employees highly also tend to rate EFCU's management highly.
+
+Since this is a correlation, it doesn't prove that better employees *cause* higher ratings. But it does show that employee service and overall impressions are closely linked, which makes employee quality a key part of how members judge EFCU.
+:::
+
+### RQ4: What predicts the overall rating
+
+```{r}
+#| label: rq4-regression
+
+rq4_model <- lm(
+  q37r ~ employee_proficiency_index + q30 + q31 + q32 + q33 + q34 + q7r + q10r,
+  data = df
+)
+
+summary(rq4_model)
+```
+
+```{r}
+#| label: rq4-table
+
+predictor_labels <- c(
+  employee_proficiency_index = "Employee proficiency index",
+  q30 = "Loan rates lower (q30)",
+  q31 = "Confidentiality (q31)",
+  q32 = "Prompt processing (q32)",
+  q33 = "Meets members' needs (q33)",
+  q34 = "Simple applications (q34)",
+  q7r = "Savings rates paid (q7r)",
+  q10r = "Statement accuracy (q10r)"
+)
+
+std_coefs <- standardize_parameters(rq4_model) |>
+  as_tibble() |>
+  select(term = Parameter, beta = Std_Coefficient)
+
+rq4_table <- tidy(rq4_model) |>
+  filter(term != "(Intercept)") |>
+  left_join(std_coefs, by = "term") |>
+  mutate(
+    predictor = predictor_labels[term],
+    vif = car::vif(rq4_model)[term],
+    significant = if_else(p.value < .05, "Yes", "No")
+  ) |>
+  select(predictor, estimate, std.error, beta, statistic, p.value, vif, significant) |>
+  arrange(p.value)
+
+rq4_table |>
+  kable(
+    digits = 3,
+    col.names = c("Predictor", "B", "SE", "Std. Beta", "t", "p", "VIF", "Significant"),
+    caption = "Multiple regression predicting overall management rating (q37r)"
+  )
+
+rq4_fit <- glance(rq4_model)
+```
+
+::: {.callout-tip title="RQ4 interpretation"}
+The model is significant overall (*F*(`r rq4_fit$df`, `r rq4_fit$df.residual`) = `r round(rq4_fit$statistic, 2)`, *p* < .001) and explains **`r round(rq4_fit$r.squared * 100, 1)`%** of the variance in the overall rating (adjusted *R*² = `r round(rq4_fit$adj.r.squared, 3)`). That's a meaningful share for survey data.
+
+**H4 is supported.** Three predictors are significant at *p* < .05:
+
+1.  **Employee proficiency** has the strongest effect.
+2.  **Services meet members' needs (q33)** is close behind.
+3.  **Prompt loan processing (q32)** also has a significant positive effect.
+
+Loan rate perception (q30) is marginal (*p* ≈ .09), and confidentiality, application simplicity, savings rates, and statement accuracy are not significant once the other factors are controlled. All VIF values are low (below 2), so multicollinearity isn't a concern.
+
+**Implication:** If EFCU wants to raise members' overall opinion, the most effective levers are its **people**, its **fit with members' needs**, and **faster loan processing**. These matter more than statements or confidentiality, which members already rate well.
+:::
+
+### RQ5: Loan rate perception by loan status
+
+```{r}
+#| label: rq5-ttest
+
+rq5_desc <- df |>
+  group_by(loan_status) |>
+  summarise(n = n(), mean = mean(q30, na.rm = TRUE), sd = sd(q30, na.rm = TRUE))
+
+rq5_desc |> kable(digits = 2, caption = "Agreement that EFCU loan rates are lower (q30) by loan status")
+
+rq5 <- t.test(q30 ~ loan_status, data = df)
+rq5
+
+rq5_d <- cohens_d(q30 ~ loan_status, data = df, pooled_sd = FALSE)
+rq5_d
+
+wilcox.test(q30 ~ loan_status, data = df, exact = FALSE)
+```
+
+```{r}
+#| label: fig-rq5
+#| fig-cap: "Agreement that EFCU loan rates are lower, by loan status"
+#| fig-height: 3.8
+
+df |>
+  count(loan_status, q30) |>
+  group_by(loan_status) |>
+  mutate(pct = n / sum(n) * 100) |>
+  ggplot(aes(x = factor(q30), y = pct, fill = loan_status)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_x_discrete(labels = c("Strongly\ndisagree", "Disagree", "Uncertain", "Agree", "Strongly\nagree")) +
+  scale_fill_manual(values = c("#2C6E91", "#8FB9D1")) +
+  labs(x = "q30: CU loan rates are lower than other institutions", y = "% of group", fill = NULL) +
+  theme(legend.position = "top")
+```
+
+::: {.callout-tip title="RQ5 interpretation"}
+**H5 is supported.** Members who currently have a loan agree *less* that EFCU's loan rates are lower (*M* = `r round(rq5_desc$mean[1], 2)`) than members without a loan (*M* = `r round(rq5_desc$mean[2], 2)`), *t*(`r round(rq5$parameter, 1)`) = `r round(rq5$statistic, 2)`, *p* = `r round(rq5$p.value, 3)`. The effect is small to medium (Cohen's *d* = `r round(abs(rq5_d$Cohens_d), 2)`), and the Wilcoxon test points the same way.
+
+This finding matters. The members who actually pay EFCU's loan rates are the ones *least* convinced the rates are competitive. They may have compared rates when they borrowed, or they may feel the rate they got wasn't as good as expected.
+
+**Implication:** EFCU should review its loan pricing against local competitors. If its rates really are competitive, it should communicate that clearly to borrowers, for example with side-by-side rate comparisons.
+:::
+
+### RQ6: Differences by headquarters area
+
+```{r}
+#| label: rq6-ttests
+
+rq6_desc <- df |>
+  group_by(hq_area) |>
+  summarise(
+    n = n(),
+    emp_mean = mean(employee_proficiency_index, na.rm = TRUE),
+    emp_sd = sd(employee_proficiency_index, na.rm = TRUE),
+    overall_mean = mean(q37r, na.rm = TRUE),
+    overall_sd = sd(q37r, na.rm = TRUE)
+  )
+
+rq6_desc |>
+  kable(
+    digits = 2,
+    col.names = c("Group", "n", "Employee Mean", "Employee SD", "Overall Mean", "Overall SD"),
+    caption = "Employee proficiency and overall rating by headquarters area"
+  )
+
+rq6a <- t.test(employee_proficiency_index ~ hq_area, data = df)
+rq6a
+
+rq6b <- t.test(q37r ~ hq_area, data = df)
+rq6b
+```
+
+::: {.callout-tip title="RQ6 interpretation"}
+**H6a and H6b are not supported.** Members in the headquarters area and members outside it rate employee proficiency about the same (*t* = `r round(rq6a$statistic, 2)`, *p* = `r round(rq6a$p.value, 3)`), and the same is true for the overall management rating (*t* = `r round(rq6b$statistic, 2)`, *p* = `r round(rq6b$p.value, 3)`).
+
+This is a positive result for EFCU. Service quality appears consistent regardless of where members live, so members farther from headquarters aren't getting a noticeably worse experience.
+:::
+
+### RQ7: Location, loan status, and statement frequency
+
+```{r}
+#| label: rq7a-chisq
+
+rq7a_tab <- table(df$hq_area, df$loan_status)
+rq7a_tab
+round(prop.table(rq7a_tab, margin = 1) * 100, 1)
+
+rq7a <- chisq.test(rq7a_tab)
+rq7a
+cramers_v(rq7a_tab)
+```
+
+```{r}
+#| label: rq7b-chisq
+
+rq7b_tab <- table(df$hq_area, df$statement_freq_ok)
+rq7b_tab
+round(prop.table(rq7b_tab, margin = 1) * 100, 1)
+
+rq7b <- chisq.test(rq7b_tab)
+rq7b
+```
+
+::: {.callout-tip title="RQ7 interpretation"}
+**H7a is not supported at the 0.05 level, but it is close.** `r round(prop.table(rq7a_tab, 1)[2, 1] * 100, 1)`% of members outside the HQ area have a loan, compared with `r round(prop.table(rq7a_tab, 1)[1, 1] * 100, 1)`% of members in the HQ area, χ²(1) = `r round(rq7a$statistic, 2)`, *p* = `r round(rq7a$p.value, 3)`. With a larger sample, this difference might become significant, so it's worth watching.
+
+**H7b is not supported.** Satisfaction with statement frequency is nearly identical across locations (χ²(1) = `r round(rq7b$statistic, 2)`, *p* = `r round(rq7b$p.value, 3)`). About three-quarters of members in both groups say statement frequency is about right, and everyone else said statements come "not often enough." No one said they come too often.
+
+**Implication:** Statement frequency isn't a location issue. Since the only complaint is "not often enough," EFCU could consider offering more frequent or online statements to all members.
+:::
+
+## Summary of Findings
+
+```{r}
+#| label: tbl-summary
+#| tbl-cap: "Summary of hypothesis tests"
+
+tibble(
+  RQ = c("RQ3", "RQ4", "RQ5", "RQ6a", "RQ6b", "RQ7a", "RQ7b"),
+  Hypothesis = c(
+    "Employee proficiency is positively related to overall rating",
+    "Employee proficiency, q32, and q33 predict overall rating",
+    "Borrowers and non-borrowers differ on loan rate perception",
+    "HQ area differs on employee proficiency",
+    "HQ area differs on overall rating",
+    "Location is associated with loan status",
+    "Location is associated with statement frequency satisfaction"
+  ),
+  Technique = c("Pearson r", "Multiple regression", "Welch t-test", "Welch t-test", "Welch t-test", "Chi-square", "Chi-square"),
+  Result = c(
+    sprintf("r = %.2f, p < .001", rq3$estimate),
+    sprintf("R² = %.2f, all three p < .05", rq4_fit$r.squared),
+    sprintf("t = %.2f, p = %.3f", rq5$statistic, rq5$p.value),
+    sprintf("t = %.2f, p = %.3f", rq6a$statistic, rq6a$p.value),
+    sprintf("t = %.2f, p = %.3f", rq6b$statistic, rq6b$p.value),
+    sprintf("χ² = %.2f, p = %.3f", rq7a$statistic, rq7a$p.value),
+    sprintf("χ² = %.2f, p = %.3f", rq7b$statistic, rq7b$p.value)
+  ),
+  Decision = c("Supported", "Supported", "Supported", "Not supported", "Not supported", "Not supported (marginal)", "Not supported")
+) |>
+  kable()
+```
+
+::: {.callout-note title="What this means for EFCU"}
+1.  **Employees are EFCU's biggest strength and the strongest driver of overall opinion.** Investing in staff training and retention protects the area members value most.
+2.  **Meeting members' needs and faster loan processing are the next best levers.** These are significant predictors of the overall rating, but members rate them lower than employees, so there's room to improve.
+3.  **Loan rates are the weakest perception, especially among borrowers.** EFCU should compare its rates with local competitors and communicate them more clearly to the members who use them.
+4.  **Many loan products are known but not used.** Marketing should focus on reasons to choose EFCU's loans rather than basic awareness.
+5.  **Service is consistent across locations.** No location-based fixes are needed, though the near-significant difference in loan status is worth tracking.
+:::
+
+## Limitations {.unnumbered}
+
+-   **Small sample.** With 128 members, smaller differences (like RQ7a) may not reach significance.
+-   **Positive skew.** Most employee and overall ratings are 4 or 5, which limits variance and can weaken correlations and regression effects.
+-   **Missing data.** The regression uses only complete cases, so `r nobs(rq4_model)` of 128 members are included. q8r was excluded because 16% of its values are missing.
+-   **Likert items as interval.** Treating 5-point items as approximately interval is common practice, but the Wilcoxon check in RQ5 is included because the items are not truly continuous.
+-   **Possible coding issue.** The regular share account awareness result (RQ2) should be confirmed against the original questionnaires.
+-   **Correlation, not causation.** All results describe relationships in one survey, not cause and effect.
+
+## Appendix {.unnumbered}
+
+-   [GitHub Pages: Published report](https://rsabilla.github.io/IC10-2-2-Data-Analysis-Table-Case-31/)
+-   [GitHub Repo for Case 31](https://github.com/rsabilla/IC10-2-2-Data-Analysis-Table-Case-31)
